@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { getMockSolicitudes, updateSolicitud } from "@/lib/mock-data";
+import { SolicitudService } from "@/lib/api";
 import type { Solicitud } from "@/lib/types";
 import { Sidebar } from "@/components/sidebar";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,15 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { FiCheck, FiX, FiExternalLink } from "react-icons/fi";
+import { FiCheck, FiX, FiExternalLink, FiRefreshCw } from "react-icons/fi";
+
+// Helper function to normalize tipo_solicitud from backend
+const normalizeTipoSolicitud = (tipo: string): "Acceso" | "Despliegue" => {
+  const normalized = tipo.toLowerCase().trim();
+  return normalized === "acceso" || normalized === "Acceso"
+    ? "Acceso"
+    : "Despliegue";
+};
 
 export default function AprobacionPage() {
   const router = useRouter();
@@ -29,6 +37,9 @@ export default function AprobacionPage() {
   const [comentario, setComentario] = useState("");
   const [showDialog, setShowDialog] = useState(false);
   const [accion, setAccion] = useState<"aprobar" | "rechazar" | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (!user || user.cargo.toLowerCase() !== "aprobador") {
@@ -38,12 +49,52 @@ export default function AprobacionPage() {
     loadSolicitudes();
   }, [user, router]);
 
-  const loadSolicitudes = () => {
-    const todasSolicitudes = getMockSolicitudes();
-    const pendientes = todasSolicitudes.filter(
-      (s) => s.estado === "pendiente" && s.centro_costos === user?.centro_costos
-    );
-    setSolicitudes(pendientes);
+  const loadSolicitudes = async () => {
+    if (!user) return;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const data = await SolicitudService.getPendingSolicitudesByCentroCosto(
+        user.centro_costos
+      );
+
+      // Transform backend data to match frontend Solicitud type
+      const transformedSolicitudes: Solicitud[] = data.map((s: any) => ({
+        id: s.id_solicitud || "",
+        titulo: s.titulo || "",
+        tipo_solicitud: normalizeTipoSolicitud(s.tipo_solicitud || ""),
+        descripcion: s.descripcion || "",
+        comentario_adicional: s.comentario_adicional || null,
+        solicitante_id: s.correo_solicitante || "",
+        solicitante_nombre: s.correo_solicitante || "Desconocido",
+        aprobador_id: null,
+        aprobador_nombre: undefined,
+        estado: s.estado || "pendiente",
+        comentario_aprobador: null,
+        fecha_creacion: new Date(s.fecha_solicitud || Date.now()),
+        fecha_resolucion: null,
+        centro_costos: s.centro_costo || user.centro_costos,
+        // Map SolicitudDespliegue fields
+        link_pull_request: s.solicitudDespliegue?.link_pull_request,
+        documentacion_despliegue:
+          s.solicitudDespliegue?.documentacion_despliegue,
+        link_tablero_jira: s.solicitudDespliegue?.historia_jira,
+        // Map SolicitudAcceso fields
+        aplicacion: s.solicitudAcceso?.aplicacion,
+        rol_en_aplicacion: s.solicitudAcceso?.rol_en_aplicacion,
+      }));
+
+      setSolicitudes(transformedSolicitudes);
+    } catch (err) {
+      console.error("Error loading solicitudes:", err);
+      setError(
+        "Error al cargar las solicitudes. Por favor, intente nuevamente."
+      );
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleAccion = (solicitud: Solicitud, tipo: "aprobar" | "rechazar") => {
@@ -52,22 +103,42 @@ export default function AprobacionPage() {
     setShowDialog(true);
   };
 
-  const confirmarAccion = () => {
+  const confirmarAccion = async () => {
     if (!selectedSolicitud || !accion || !user) return;
 
-    updateSolicitud(selectedSolicitud.id, {
-      estado: accion === "aprobar" ? "aprobado" : "rechazado",
-      aprobador_id: user.id,
-      aprobador_nombre: user.nombre,
-      comentario_aprobador: comentario || null,
-      fecha_resolucion: new Date(),
-    });
+    setIsSubmitting(true);
 
-    setShowDialog(false);
-    setComentario("");
-    setSelectedSolicitud(null);
-    setAccion(null);
-    loadSolicitudes();
+    try {
+      const result =
+        accion === "aprobar"
+          ? await SolicitudService.approveSolicitud(
+              selectedSolicitud.id,
+              comentario || undefined
+            )
+          : await SolicitudService.rejectSolicitud(
+              selectedSolicitud.id,
+              comentario || undefined
+            );
+
+      if (result.success) {
+        // Success - close dialog and reload
+        setShowDialog(false);
+        setComentario("");
+        setSelectedSolicitud(null);
+        setAccion(null);
+        await loadSolicitudes();
+      } else {
+        // Show error
+        setError(
+          result.error || "Error al procesar la solicitud. Intente nuevamente."
+        );
+      }
+    } catch (err) {
+      console.error("Error confirming action:", err);
+      setError("Error al procesar la solicitud. Intente nuevamente.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -76,11 +147,40 @@ export default function AprobacionPage() {
 
       <main className="flex-1 lg:ml-64 p-8">
         <div className="max-w-6xl mx-auto">
-          <h1 className="text-3xl font-bold mb-8 text-slate-800 dark:text-slate-100">
-            Solicitudes Pendientes
-          </h1>
+          <div className="flex items-center justify-between mb-8">
+            <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-100">
+              Solicitudes Pendientes
+            </h1>
 
-          {solicitudes.length === 0 ? (
+            <Button
+              onClick={loadSolicitudes}
+              disabled={isLoading}
+              variant="outline"
+              size="sm"
+              className="dark:bg-slate-700 dark:text-slate-100 dark:border-slate-600"
+            >
+              <FiRefreshCw
+                className={`w-4 h-4 mr-2 ${isLoading ? "animate-spin" : ""}`}
+              />
+              Actualizar
+            </Button>
+          </div>
+
+          {error && (
+            <div className="mb-6 p-4 rounded-md bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800">
+              <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+            </div>
+          )}
+
+          {isLoading ? (
+            <Card className="dark:bg-slate-800 dark:border-slate-700">
+              <CardContent className="pt-6">
+                <p className="text-center text-gray-500 dark:text-slate-400">
+                  Cargando solicitudes...
+                </p>
+              </CardContent>
+            </Card>
+          ) : solicitudes.length === 0 ? (
             <Card className="dark:bg-slate-800 dark:border-slate-700">
               <CardContent className="pt-6">
                 <p className="text-center text-gray-500 dark:text-slate-400">
@@ -217,10 +317,10 @@ export default function AprobacionPage() {
                         </div>
                       )}
 
-                      {solicitud.tipo_solicitud === "Accesos" && (
+                      {solicitud.tipo_solicitud === "Acceso" && (
                         <div className="border-t dark:border-slate-600 pt-3 space-y-2">
                           <h4 className="font-semibold text-sm text-[#0052CC] dark:text-[#60A5FA]">
-                            Información de Accesos
+                            Información de Acceso
                           </h4>
                           {solicitud.aplicacion && (
                             <div>
@@ -298,18 +398,20 @@ export default function AprobacionPage() {
             <Button
               variant="outline"
               onClick={() => setShowDialog(false)}
+              disabled={isSubmitting}
               className="dark:bg-slate-700 dark:text-slate-100 dark:border-slate-600 dark:hover:bg-slate-600"
             >
               Cancelar
             </Button>
             <Button
               onClick={confirmarAccion}
+              disabled={isSubmitting}
               className="text-white"
               style={{
                 backgroundColor: accion === "aprobar" ? "#34D399" : "#F87171",
               }}
             >
-              Confirmar
+              {isSubmitting ? "Procesando..." : "Confirmar"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { saveSolicitud } from "@/lib/mock-data";
+import { SolicitudService } from "@/lib/api";
 import type { SolicitudTipo } from "@/lib/types";
 import { Sidebar } from "@/components/sidebar";
 import { Button } from "@/components/ui/button";
@@ -30,7 +30,7 @@ import { useEffect } from "react";
 const validationSchema = Yup.object().shape({
   titulo: Yup.string().required("El título es requerido"),
   tipo_solicitud: Yup.string()
-    .oneOf(["Despliegue", "Accesos"], "Tipo de solicitud inválido")
+    .oneOf(["Despliegue", "Acceso"], "Tipo de solicitud inválido")
     .required("El tipo de solicitud es requerido"),
   descripcion: Yup.string().required("La descripción es requerida"),
   comentario_adicional: Yup.string(),
@@ -59,13 +59,13 @@ const validationSchema = Yup.object().shape({
     otherwise: (schema) => schema.notRequired(),
   }),
   aplicacion: Yup.string().when("tipo_solicitud", {
-    is: "Accesos",
+    is: "Acceso",
     then: (schema) =>
       schema.required("El nombre de la aplicación es requerido"),
     otherwise: (schema) => schema.notRequired(),
   }),
   rol_en_aplicacion: Yup.string().when("tipo_solicitud", {
-    is: "Accesos",
+    is: "Acceso",
     then: (schema) => schema.required("El rol en la aplicación es requerido"),
     otherwise: (schema) => schema.notRequired(),
   }),
@@ -84,6 +84,59 @@ export default function SolicitudPage() {
   if (!user || user.cargo.toLowerCase() === "aprobador") {
     return null;
   }
+
+  /**
+   * Handles the creation of a new solicitud
+   * Manages the API call, success/error states, and navigation
+   */
+  const handleCreateSolicitud = async (
+    values: any,
+    { setSubmitting, resetForm, setStatus }: any
+  ) => {
+    try {
+      // Build the request payload based on solicitud type
+      const payload = {
+        titulo: values.titulo,
+        tipo_solicitud: values.tipo_solicitud as SolicitudTipo,
+        descripcion: values.descripcion,
+        comentario_adicional: values.comentario_adicional || undefined,
+        correo_solicitante: user.correo,
+        centro_costo: user.centro_costos,
+        // Add type-specific fields
+        ...(values.tipo_solicitud === "Despliegue" && {
+          link_pull_request: values.link_pull_request,
+          documentacion_despliegue: values.documentacion_despliegue,
+          link_tablero_jira: values.link_tablero_jira,
+        }),
+        ...(values.tipo_solicitud === "Acceso" && {
+          aplicacion: values.aplicacion,
+          rol_en_aplicacion: values.rol_en_aplicacion,
+        }),
+      };
+
+      const result = await SolicitudService.createSolicitud(payload);
+
+      if (result.success) {
+        setStatus({ success: true });
+
+        // Redirect to "Mis Solicitudes" after 2 seconds
+        setTimeout(() => {
+          resetForm();
+          setStatus({ success: false });
+          router.push("/mis-solicitudes");
+        }, 2000);
+      } else {
+        setStatus({ error: result.error || "Error desconocido" });
+      }
+    } catch (error) {
+      console.error("Error creating solicitud:", error);
+      setStatus({
+        error: "Error al crear la solicitud. Intente nuevamente.",
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="flex min-h-screen bg-[#F5F7FA] dark:bg-slate-900 transition-colors">
@@ -118,44 +171,7 @@ export default function SolicitudPage() {
                   rol_en_aplicacion: "",
                 }}
                 validationSchema={validationSchema}
-                onSubmit={(values, { setSubmitting, resetForm, setStatus }) => {
-                  const nuevaSolicitud = {
-                    id: Math.random().toString(36).substr(2, 9),
-                    titulo: values.titulo,
-                    tipo_solicitud: values.tipo_solicitud as SolicitudTipo,
-                    descripcion: values.descripcion,
-                    comentario_adicional: values.comentario_adicional || null,
-                    solicitante_id: user.id,
-                    solicitante_nombre: user.nombre,
-                    aprobador_id: null,
-                    aprobador_nombre: undefined,
-                    estado: "pendiente" as const,
-                    comentario_aprobador: null,
-                    fecha_creacion: new Date(),
-                    fecha_resolucion: null,
-                    centro_costos: user.centro_costos,
-                    ...(values.tipo_solicitud === "Despliegue" && {
-                      link_pull_request: values.link_pull_request,
-                      documentacion_despliegue: values.documentacion_despliegue,
-                      link_tablero_jira: values.link_tablero_jira,
-                    }),
-                    ...(values.tipo_solicitud === "Accesos" && {
-                      aplicacion: values.aplicacion,
-                      rol_en_aplicacion: values.rol_en_aplicacion,
-                    }),
-                  };
-
-                  saveSolicitud(nuevaSolicitud);
-                  setStatus({ success: true });
-
-                  setTimeout(() => {
-                    resetForm();
-                    setStatus({ success: false });
-                    router.push("/mis-solicitudes");
-                  }, 2000);
-
-                  setSubmitting(false);
-                }}
+                onSubmit={handleCreateSolicitud}
               >
                 {({
                   values,
@@ -213,10 +229,10 @@ export default function SolicitudPage() {
                             Despliegue
                           </SelectItem>
                           <SelectItem
-                            value="Accesos"
+                            value="Acceso"
                             className="dark:text-slate-100 dark:focus:bg-slate-600"
                           >
-                            Accesos
+                            Acceso
                           </SelectItem>
                         </SelectContent>
                       </Select>
@@ -344,11 +360,11 @@ export default function SolicitudPage() {
                       </div>
                     )}
 
-                    {values.tipo_solicitud === "Accesos" && (
+                    {values.tipo_solicitud === "Acceso" && (
                       <div className="space-y-6 animate-in fade-in-50 duration-300">
                         <div className="border-t dark:border-slate-600 pt-4">
                           <h3 className="text-lg font-semibold mb-4 text-[#0052CC] dark:text-[#60A5FA]">
-                            Información de Accesos
+                            Información de Acceso
                           </h3>
 
                           <div className="space-y-4">
@@ -402,6 +418,14 @@ export default function SolicitudPage() {
                       <div className="p-3 rounded-md bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800">
                         <p className="text-sm text-green-600 dark:text-green-400">
                           ¡Solicitud creada exitosamente!
+                        </p>
+                      </div>
+                    )}
+
+                    {status?.error && (
+                      <div className="p-3 rounded-md bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800">
+                        <p className="text-sm text-red-600 dark:text-red-400">
+                          {status.error}
                         </p>
                       </div>
                     )}

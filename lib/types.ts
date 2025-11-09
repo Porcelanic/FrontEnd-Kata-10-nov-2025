@@ -6,7 +6,7 @@ export interface User {
   centro_costos: number
 }
 
-export type SolicitudTipo = "Despliegue" | "Accesos"
+export type SolicitudTipo = "Despliegue" | "Acceso"
 export type SolicitudEstado = "pendiente" | "aprobado" | "rechazado"
 
 export interface Solicitud {
@@ -28,7 +28,7 @@ export interface Solicitud {
   link_pull_request?: string
   documentacion_despliegue?: string
   link_tablero_jira?: string
-  // Campos específicos para Accesos
+  // Campos específicos para Acceso
   aplicacion?: string
   rol_en_aplicacion?: string
 }

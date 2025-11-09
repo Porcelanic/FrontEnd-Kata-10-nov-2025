@@ -3,11 +3,12 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { getMockSolicitudes } from "@/lib/mock-data";
+import { SolicitudService } from "@/lib/api";
 import type { Solicitud } from "@/lib/types";
 import { Sidebar } from "@/components/sidebar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -15,13 +16,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { FiExternalLink } from "react-icons/fi";
+import { FiExternalLink, FiRefreshCw } from "react-icons/fi";
+
+// Helper function to normalize tipo_solicitud from backend
+const normalizeTipoSolicitud = (tipo: string): "Acceso" | "Despliegue" => {
+  const normalized = tipo.toLowerCase().trim();
+  return normalized === "acceso" || normalized === "Acceso"
+    ? "Acceso"
+    : "Despliegue";
+};
 
 export default function MisResolucionesPage() {
   const router = useRouter();
   const { user } = useAuth();
   const [solicitudes, setSolicitudes] = useState<Solicitud[]>([]);
   const [filtroTipo, setFiltroTipo] = useState<string>("todas");
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user || user.cargo.toLowerCase() !== "aprobador") {
@@ -31,12 +42,54 @@ export default function MisResolucionesPage() {
     loadSolicitudes();
   }, [user, router]);
 
-  const loadSolicitudes = () => {
-    const todasSolicitudes = getMockSolicitudes();
-    const misSolicitudes = todasSolicitudes.filter(
-      (s) => s.aprobador_id === user?.id && s.estado !== "pendiente"
-    );
-    setSolicitudes(misSolicitudes);
+  const loadSolicitudes = async () => {
+    if (!user) return;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const data = await SolicitudService.getResolvedSolicitudesByCentroCosto(
+        user.centro_costos
+      );
+
+      // Transform backend data to match frontend Solicitud type
+      const transformedSolicitudes: Solicitud[] = data.map((s: any) => ({
+        id: s.id_solicitud || "",
+        titulo: s.titulo || "",
+        tipo_solicitud: normalizeTipoSolicitud(s.tipo_solicitud || ""),
+        descripcion: s.descripcion || "",
+        comentario_adicional: s.comentario_adicional || null,
+        solicitante_id: s.correo_solicitante || "",
+        solicitante_nombre: s.correo_solicitante || "Desconocido",
+        aprobador_id: user.id,
+        aprobador_nombre: user.nombre,
+        estado: s.estado || "pendiente",
+        comentario_aprobador: s.comentario_adicional || null, // Backend stores comment in comentario_adicional
+        fecha_creacion: new Date(s.fecha_solicitud || Date.now()),
+        fecha_resolucion: s.fecha_solicitud
+          ? new Date(s.fecha_solicitud)
+          : null, // Using fecha_solicitud as placeholder
+        centro_costos: s.centro_costo || user.centro_costos,
+        // Map SolicitudDespliegue fields
+        link_pull_request: s.solicitudDespliegue?.link_pull_request,
+        documentacion_despliegue:
+          s.solicitudDespliegue?.documentacion_despliegue,
+        link_tablero_jira: s.solicitudDespliegue?.historia_jira,
+        // Map SolicitudAcceso fields
+        aplicacion: s.solicitudAcceso?.aplicacion,
+        rol_en_aplicacion: s.solicitudAcceso?.rol_en_aplicacion,
+      }));
+
+      setSolicitudes(transformedSolicitudes);
+    } catch (err) {
+      console.error("Error loading resoluciones:", err);
+      setError(
+        "Error al cargar las resoluciones. Por favor, intente nuevamente."
+      );
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const solicitudesFiltradas =
@@ -71,36 +124,65 @@ export default function MisResolucionesPage() {
               Mis Resoluciones
             </h1>
 
-            <div className="w-48">
-              <Select value={filtroTipo} onValueChange={setFiltroTipo}>
-                <SelectTrigger className="dark:bg-slate-700 dark:text-slate-100 dark:border-slate-600">
-                  <SelectValue placeholder="Filtrar por tipo" />
-                </SelectTrigger>
-                <SelectContent className="dark:bg-slate-700 dark:border-slate-600">
-                  <SelectItem
-                    value="todas"
-                    className="dark:text-slate-100 dark:focus:bg-slate-600"
-                  >
-                    Todas
-                  </SelectItem>
-                  <SelectItem
-                    value="Despliegue"
-                    className="dark:text-slate-100 dark:focus:bg-slate-600"
-                  >
-                    Despliegue
-                  </SelectItem>
-                  <SelectItem
-                    value="Accesos"
-                    className="dark:text-slate-100 dark:focus:bg-slate-600"
-                  >
-                    Accesos
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="flex items-center gap-4">
+              <Button
+                onClick={loadSolicitudes}
+                disabled={isLoading}
+                variant="outline"
+                size="sm"
+                className="dark:bg-slate-700 dark:text-slate-100 dark:border-slate-600"
+              >
+                <FiRefreshCw
+                  className={`w-4 h-4 mr-2 ${isLoading ? "animate-spin" : ""}`}
+                />
+                Actualizar
+              </Button>
+
+              <div className="w-48">
+                <Select value={filtroTipo} onValueChange={setFiltroTipo}>
+                  <SelectTrigger className="dark:bg-slate-700 dark:text-slate-100 dark:border-slate-600">
+                    <SelectValue placeholder="Filtrar por tipo" />
+                  </SelectTrigger>
+                  <SelectContent className="dark:bg-slate-700 dark:border-slate-600">
+                    <SelectItem
+                      value="todas"
+                      className="dark:text-slate-100 dark:focus:bg-slate-600"
+                    >
+                      Todas
+                    </SelectItem>
+                    <SelectItem
+                      value="Despliegue"
+                      className="dark:text-slate-100 dark:focus:bg-slate-600"
+                    >
+                      Despliegue
+                    </SelectItem>
+                    <SelectItem
+                      value="Acceso"
+                      className="dark:text-slate-100 dark:focus:bg-slate-600"
+                    >
+                      Acceso
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
 
-          {solicitudesFiltradas.length === 0 ? (
+          {error && (
+            <div className="mb-6 p-4 rounded-md bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800">
+              <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+            </div>
+          )}
+
+          {isLoading ? (
+            <Card className="dark:bg-slate-800 dark:border-slate-700">
+              <CardContent className="pt-6">
+                <p className="text-center text-gray-500 dark:text-slate-400">
+                  Cargando resoluciones...
+                </p>
+              </CardContent>
+            </Card>
+          ) : solicitudesFiltradas.length === 0 ? (
             <Card className="dark:bg-slate-800 dark:border-slate-700">
               <CardContent className="pt-6">
                 <p className="text-center text-gray-500 dark:text-slate-400">
@@ -250,10 +332,10 @@ export default function MisResolucionesPage() {
                         </div>
                       )}
 
-                      {solicitud.tipo_solicitud === "Accesos" && (
+                      {solicitud.tipo_solicitud === "Acceso" && (
                         <div className="border-t dark:border-slate-600 pt-3 space-y-2">
                           <h4 className="font-semibold text-sm text-[#0052CC] dark:text-[#60A5FA]">
-                            Información de Accesos
+                            Información de Acceso
                           </h4>
                           {solicitud.aplicacion && (
                             <div>
