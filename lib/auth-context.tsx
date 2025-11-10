@@ -22,7 +22,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check if user is already logged in
     const storedUser = localStorage.getItem("currentUser");
     if (storedUser) {
       setUser(JSON.parse(storedUser));
@@ -35,7 +34,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     if (result.success && result.user) {
       const userData: User = {
-        id: result.user.correo, // Using correo as id since it's the primary key
+        id: result.user.correo,
         correo: result.user.correo,
         nombre: result.user.nombre,
         cargo: result.user.cargo,

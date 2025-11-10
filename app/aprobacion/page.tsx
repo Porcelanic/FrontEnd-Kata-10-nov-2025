@@ -19,7 +19,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { FiCheck, FiX, FiExternalLink, FiRefreshCw } from "react-icons/fi";
 
-// Helper function to normalize tipo_solicitud from backend
 const normalizeTipoSolicitud = (tipo: string): "Acceso" | "Despliegue" => {
   const normalized = tipo.toLowerCase().trim();
   return normalized === "acceso" || normalized === "Acceso"
@@ -60,7 +59,6 @@ export default function AprobacionPage() {
         user.centro_costos
       );
 
-      // Transform backend data to match frontend Solicitud type
       const transformedSolicitudes: Solicitud[] = data.map((s: any) => ({
         id: s.id_solicitud || "",
         titulo: s.titulo || "",
@@ -76,12 +74,10 @@ export default function AprobacionPage() {
         fecha_creacion: new Date(s.fecha_solicitud || Date.now()),
         fecha_resolucion: null,
         centro_costos: s.centro_costo || user.centro_costos,
-        // Map SolicitudDespliegue fields
         link_pull_request: s.solicitudDespliegue?.link_pull_request,
         documentacion_despliegue:
           s.solicitudDespliegue?.documentacion_despliegue,
         link_tablero_jira: s.solicitudDespliegue?.historia_jira,
-        // Map SolicitudAcceso fields
         aplicacion: s.solicitudAcceso?.aplicacion,
         rol_en_aplicacion: s.solicitudAcceso?.rol_en_aplicacion,
       }));
@@ -121,14 +117,12 @@ export default function AprobacionPage() {
             );
 
       if (result.success) {
-        // Success - close dialog and reload
         setShowDialog(false);
         setComentario("");
         setSelectedSolicitud(null);
         setAccion(null);
         await loadSolicitudes();
       } else {
-        // Show error
         setError(
           result.error || "Error al procesar la solicitud. Intente nuevamente."
         );

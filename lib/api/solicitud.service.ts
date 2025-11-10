@@ -10,11 +10,9 @@ interface CreateSolicitudRequest {
   comentario_adicional?: string;
   correo_solicitante: string;
   centro_costo: number;
-  // Campos específicos para Despliegue
   link_pull_request?: string;
   documentacion_despliegue?: string;
   link_tablero_jira?: string;
-  // Campos específicos para Acceso
   aplicacion?: string;
   rol_en_aplicacion?: string;
 }
@@ -365,6 +363,91 @@ export class SolicitudService {
     } catch (error) {
       console.error("Error in getAllResolvedSolicitudes:", error);
       return [];
+    }
+  }
+
+  /**
+   * Updates SolicitudAcceso fields
+   */
+  static async updateSolicitudAcceso(
+    id: string,
+    aplicacion: string,
+    rolEnAplicacion: string
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/solicitud-acceso/${id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id_solicitud: id,
+          aplicacion: aplicacion,
+          rol_en_aplicacion: rolEnAplicacion,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        return {
+          success: false,
+          error: error.errors?.[0] || "Error updating solicitud acceso",
+        };
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error("Error in updateSolicitudAcceso:", error);
+      return {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Unknown error occurred",
+      };
+    }
+  }
+
+  /**
+   * Updates SolicitudDespliegue fields
+   */
+  static async updateSolicitudDespliegue(
+    id: string,
+    linkPullRequest: string,
+    documentacionDespliegue: string,
+    linkTableroJira: string
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/solicitud-despliegue/${id}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            id_solicitud: id,
+            link_pull_request: linkPullRequest,
+            documentacion_despliegue: documentacionDespliegue,
+            historia_jira: linkTableroJira,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        return {
+          success: false,
+          error: error.errors?.[0] || "Error updating solicitud despliegue",
+        };
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error("Error in updateSolicitudDespliegue:", error);
+      return {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Unknown error occurred",
+      };
     }
   }
 }

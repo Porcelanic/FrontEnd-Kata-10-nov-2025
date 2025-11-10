@@ -24,11 +24,9 @@ export interface Solicitud {
   fecha_creacion: Date
   fecha_resolucion: Date | null
   centro_costos: number
-  // Campos específicos para Despliegue
   link_pull_request?: string
   documentacion_despliegue?: string
   link_tablero_jira?: string
-  // Campos específicos para Acceso
   aplicacion?: string
   rol_en_aplicacion?: string
 }

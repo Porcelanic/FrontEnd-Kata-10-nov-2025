@@ -84,23 +84,17 @@ export default function SolicitudPage() {
     return null;
   }
 
-  /**
-   * Handles the creation of a new solicitud
-   * Manages the API call, success/error states, and navigation
-   */
   const handleCreateSolicitud = async (
     values: any,
     { setSubmitting, resetForm, setStatus }: any
   ) => {
     try {
-      // Build the request payload based on solicitud type
       const payload = {
         titulo: values.titulo,
         tipo_solicitud: values.tipo_solicitud as SolicitudTipo,
         descripcion: values.descripcion,
         correo_solicitante: user.correo,
         centro_costo: user.centro_costos,
-        // Add type-specific fields
         ...(values.tipo_solicitud === "Despliegue" && {
           link_pull_request: values.link_pull_request,
           documentacion_despliegue: values.documentacion_despliegue,
@@ -117,7 +111,6 @@ export default function SolicitudPage() {
       if (result.success) {
         setStatus({ success: true });
 
-        // Redirect to "Mis Solicitudes" after 2 seconds
         setTimeout(() => {
           resetForm();
           setStatus({ success: false });

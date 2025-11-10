@@ -4,11 +4,21 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { SolicitudService } from "@/lib/api";
-import type { Solicitud } from "@/lib/types";
+import type { Solicitud, SolicitudTipo } from "@/lib/types";
 import { Sidebar } from "@/components/sidebar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -16,9 +26,52 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { FiExternalLink, FiRefreshCw } from "react-icons/fi";
+import { FiExternalLink, FiRefreshCw, FiEdit2, FiTrash2 } from "react-icons/fi";
+import { Formik, Form, Field, ErrorMessage } from "formik";
+import * as Yup from "yup";
 
-// Helper function to normalize tipo_solicitud from backend
+const getEditValidationSchema = (tipoSolicitud: string) => {
+  return Yup.object().shape({
+    titulo: Yup.string().required("El título es requerido"),
+    descripcion: Yup.string().required("La descripción es requerida"),
+    link_pull_request: Yup.string().when([], {
+      is: () => tipoSolicitud === "Despliegue",
+      then: (schema) =>
+        schema
+          .url("Debe ser una URL válida")
+          .required("El link del Pull Request es requerido"),
+      otherwise: (schema) => schema.notRequired(),
+    }),
+    documentacion_despliegue: Yup.string().when([], {
+      is: () => tipoSolicitud === "Despliegue",
+      then: (schema) =>
+        schema
+          .url("Debe ser una URL válida")
+          .required("La documentación de despliegue es requerida"),
+      otherwise: (schema) => schema.notRequired(),
+    }),
+    link_tablero_jira: Yup.string().when([], {
+      is: () => tipoSolicitud === "Despliegue",
+      then: (schema) =>
+        schema
+          .url("Debe ser una URL válida")
+          .required("El link del tablero Jira es requerido"),
+      otherwise: (schema) => schema.notRequired(),
+    }),
+    aplicacion: Yup.string().when([], {
+      is: () => tipoSolicitud === "Acceso",
+      then: (schema) =>
+        schema.required("El nombre de la aplicación es requerido"),
+      otherwise: (schema) => schema.notRequired(),
+    }),
+    rol_en_aplicacion: Yup.string().when([], {
+      is: () => tipoSolicitud === "Acceso",
+      then: (schema) => schema.required("El rol en la aplicación es requerido"),
+      otherwise: (schema) => schema.notRequired(),
+    }),
+  });
+};
+
 const normalizeTipoSolicitud = (tipo: string): "Acceso" | "Despliegue" => {
   const normalized = tipo.toLowerCase().trim();
   return normalized === "acceso" || normalized === "Acceso"
@@ -33,6 +86,22 @@ export default function MisSolicitudesPage() {
   const [filtroTipo, setFiltroTipo] = useState<string>("todas");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [selectedSolicitud, setSelectedSolicitud] = useState<Solicitud | null>(
+    null
+  );
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const [editForm, setEditForm] = useState({
+    titulo: "",
+    descripcion: "",
+    link_pull_request: "",
+    documentacion_despliegue: "",
+    link_tablero_jira: "",
+    aplicacion: "",
+    rol_en_aplicacion: "",
+  });
 
   useEffect(() => {
     if (!user) {
@@ -66,12 +135,10 @@ export default function MisSolicitudesPage() {
         fecha_creacion: new Date(s.fecha_solicitud || Date.now()),
         fecha_resolucion: null,
         centro_costos: s.centro_costo || user.centro_costos,
-        // Map SolicitudDespliegue fields
         link_pull_request: s.solicitudDespliegue?.link_pull_request,
         documentacion_despliegue:
           s.solicitudDespliegue?.documentacion_despliegue,
         link_tablero_jira: s.solicitudDespliegue?.historia_jira,
-        // Map SolicitudAcceso fields
         aplicacion: s.solicitudAcceso?.aplicacion,
         rol_en_aplicacion: s.solicitudAcceso?.rol_en_aplicacion,
       }));
@@ -91,6 +158,40 @@ export default function MisSolicitudesPage() {
     filtroTipo === "todas"
       ? solicitudes
       : solicitudes.filter((s) => s.tipo_solicitud === filtroTipo);
+
+  const handleEdit = (solicitud: Solicitud) => {
+    setSelectedSolicitud(solicitud);
+    setEditForm({
+      titulo: solicitud.titulo,
+      descripcion: solicitud.descripcion,
+      link_pull_request: solicitud.link_pull_request || "",
+      documentacion_despliegue: solicitud.documentacion_despliegue || "",
+      link_tablero_jira: solicitud.link_tablero_jira || "",
+      aplicacion: solicitud.aplicacion || "",
+      rol_en_aplicacion: solicitud.rol_en_aplicacion || "",
+    });
+    setEditError(null);
+    setShowEditDialog(true);
+  };
+
+  const handleDelete = async (solicitudId: string) => {
+    if (!confirm("¿Estás seguro de que deseas eliminar esta solicitud?")) {
+      return;
+    }
+
+    try {
+      const result = await SolicitudService.deleteSolicitud(solicitudId);
+
+      if (result.success) {
+        await loadSolicitudes();
+      } else {
+        setError(result.error || "Error al eliminar la solicitud");
+      }
+    } catch (err) {
+      console.error("Error deleting solicitud:", err);
+      setError("Error al eliminar la solicitud. Intente nuevamente.");
+    }
+  };
 
   const getEstadoBadge = (estado: string) => {
     const colores = {
@@ -374,6 +475,29 @@ export default function MisSolicitudesPage() {
                           </p>
                         </div>
                       )}
+
+                      {solicitud.estado === "pendiente" && (
+                        <div className="flex gap-2 pt-2 border-t dark:border-slate-600">
+                          <Button
+                            onClick={() => handleEdit(solicitud)}
+                            variant="outline"
+                            size="sm"
+                            className="dark:bg-slate-700 dark:text-slate-100 dark:border-slate-600"
+                          >
+                            <FiEdit2 className="w-4 h-4 mr-2" />
+                            Editar
+                          </Button>
+                          <Button
+                            onClick={() => handleDelete(solicitud.id)}
+                            variant="outline"
+                            size="sm"
+                            className="text-red-600 border-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                          >
+                            <FiTrash2 className="w-4 h-4 mr-2" />
+                            Eliminar
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -382,6 +506,301 @@ export default function MisSolicitudesPage() {
           )}
         </div>
       </main>
+
+      {/* Dialog de Edición */}
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent className="dark:bg-slate-800 dark:border-slate-700 max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="dark:text-slate-100">
+              Editar Solicitud
+            </DialogTitle>
+          </DialogHeader>
+
+          {selectedSolicitud && (
+            <Formik
+              initialValues={editForm}
+              validationSchema={getEditValidationSchema(
+                selectedSolicitud.tipo_solicitud
+              )}
+              enableReinitialize
+              onSubmit={async (values, { setSubmitting }) => {
+                setEditError(null);
+
+                try {
+                  const updates: any = {
+                    titulo: values.titulo,
+                    descripcion: values.descripcion,
+                  };
+
+                  const baseResult = await SolicitudService.updateSolicitud(
+                    selectedSolicitud.id,
+                    updates
+                  );
+
+                  if (!baseResult.success) {
+                    setEditError(
+                      baseResult.error || "Error al actualizar la solicitud"
+                    );
+                    setSubmitting(false);
+                    return;
+                  }
+
+                  if (selectedSolicitud.tipo_solicitud === "Acceso") {
+                    const accesoResult =
+                      await SolicitudService.updateSolicitudAcceso(
+                        selectedSolicitud.id,
+                        values.aplicacion,
+                        values.rol_en_aplicacion
+                      );
+
+                    if (!accesoResult.success) {
+                      setEditError(
+                        accesoResult.error ||
+                          "Error al actualizar información de acceso"
+                      );
+                      setSubmitting(false);
+                      return;
+                    }
+                  } else if (
+                    selectedSolicitud.tipo_solicitud === "Despliegue"
+                  ) {
+                    const despliegueResult =
+                      await SolicitudService.updateSolicitudDespliegue(
+                        selectedSolicitud.id,
+                        values.link_pull_request,
+                        values.documentacion_despliegue,
+                        values.link_tablero_jira
+                      );
+
+                    if (!despliegueResult.success) {
+                      setEditError(
+                        despliegueResult.error ||
+                          "Error al actualizar información de despliegue"
+                      );
+                      setSubmitting(false);
+                      return;
+                    }
+                  }
+
+                  setShowEditDialog(false);
+                  setSelectedSolicitud(null);
+                  await loadSolicitudes();
+                } catch (err) {
+                  console.error("Error updating solicitud:", err);
+                  setEditError(
+                    "Error al actualizar la solicitud. Intente nuevamente."
+                  );
+                } finally {
+                  setSubmitting(false);
+                }
+              }}
+            >
+              {({
+                values,
+                errors,
+                touched,
+                isSubmitting,
+                handleChange,
+                handleBlur,
+              }) => (
+                <Form>
+                  <div className="space-y-4">
+                    {/* Título */}
+                    <div className="space-y-2">
+                      <Label htmlFor="titulo" className="dark:text-slate-200">
+                        Título *
+                      </Label>
+                      <Field
+                        as={Input}
+                        id="titulo"
+                        name="titulo"
+                        className="dark:bg-slate-700 dark:text-slate-100 dark:border-slate-600"
+                      />
+                      <ErrorMessage
+                        name="titulo"
+                        component="div"
+                        className="text-sm text-red-600 dark:text-red-400"
+                      />
+                    </div>
+
+                    {/* Descripción */}
+                    <div className="space-y-2">
+                      <Label
+                        htmlFor="descripcion"
+                        className="dark:text-slate-200"
+                      >
+                        Descripción *
+                      </Label>
+                      <Field
+                        as={Textarea}
+                        id="descripcion"
+                        name="descripcion"
+                        rows={4}
+                        className="dark:bg-slate-700 dark:text-slate-100 dark:border-slate-600"
+                      />
+                      <ErrorMessage
+                        name="descripcion"
+                        component="div"
+                        className="text-sm text-red-600 dark:text-red-400"
+                      />
+                    </div>
+
+                    {/* Campos de Despliegue */}
+                    {selectedSolicitud.tipo_solicitud === "Despliegue" && (
+                      <div className="space-y-4 border-t dark:border-slate-600 pt-4">
+                        <h3 className="font-semibold text-[#0052CC] dark:text-[#60A5FA]">
+                          Información de Despliegue
+                        </h3>
+
+                        <div className="space-y-2">
+                          <Label
+                            htmlFor="link_pull_request"
+                            className="dark:text-slate-200"
+                          >
+                            Link Pull Request *
+                          </Label>
+                          <Field
+                            as={Input}
+                            id="link_pull_request"
+                            name="link_pull_request"
+                            type="url"
+                            className="dark:bg-slate-700 dark:text-slate-100 dark:border-slate-600"
+                          />
+                          <ErrorMessage
+                            name="link_pull_request"
+                            component="div"
+                            className="text-sm text-red-600 dark:text-red-400"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label
+                            htmlFor="documentacion_despliegue"
+                            className="dark:text-slate-200"
+                          >
+                            Link Documentación *
+                          </Label>
+                          <Field
+                            as={Input}
+                            id="documentacion_despliegue"
+                            name="documentacion_despliegue"
+                            type="url"
+                            className="dark:bg-slate-700 dark:text-slate-100 dark:border-slate-600"
+                          />
+                          <ErrorMessage
+                            name="documentacion_despliegue"
+                            component="div"
+                            className="text-sm text-red-600 dark:text-red-400"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label
+                            htmlFor="link_tablero_jira"
+                            className="dark:text-slate-200"
+                          >
+                            Link Tablero Jira *
+                          </Label>
+                          <Field
+                            as={Input}
+                            id="link_tablero_jira"
+                            name="link_tablero_jira"
+                            type="url"
+                            className="dark:bg-slate-700 dark:text-slate-100 dark:border-slate-600"
+                          />
+                          <ErrorMessage
+                            name="link_tablero_jira"
+                            component="div"
+                            className="text-sm text-red-600 dark:text-red-400"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Campos de Acceso */}
+                    {selectedSolicitud.tipo_solicitud === "Acceso" && (
+                      <div className="space-y-4 border-t dark:border-slate-600 pt-4">
+                        <h3 className="font-semibold text-[#0052CC] dark:text-[#60A5FA]">
+                          Información de Acceso
+                        </h3>
+
+                        <div className="space-y-2">
+                          <Label
+                            htmlFor="aplicacion"
+                            className="dark:text-slate-200"
+                          >
+                            Aplicación *
+                          </Label>
+                          <Field
+                            as={Input}
+                            id="aplicacion"
+                            name="aplicacion"
+                            className="dark:bg-slate-700 dark:text-slate-100 dark:border-slate-600"
+                          />
+                          <ErrorMessage
+                            name="aplicacion"
+                            component="div"
+                            className="text-sm text-red-600 dark:text-red-400"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label
+                            htmlFor="rol_en_aplicacion"
+                            className="dark:text-slate-200"
+                          >
+                            Rol en Aplicación *
+                          </Label>
+                          <Field
+                            as={Input}
+                            id="rol_en_aplicacion"
+                            name="rol_en_aplicacion"
+                            className="dark:bg-slate-700 dark:text-slate-100 dark:border-slate-600"
+                          />
+                          <ErrorMessage
+                            name="rol_en_aplicacion"
+                            component="div"
+                            className="text-sm text-red-600 dark:text-red-400"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Error general */}
+                    {editError && (
+                      <div className="p-3 rounded-md bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800">
+                        <p className="text-sm text-red-600 dark:text-red-400">
+                          {editError}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  <DialogFooter className="mt-6">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setShowEditDialog(false)}
+                      disabled={isSubmitting}
+                      className="dark:bg-slate-700 dark:text-slate-100 dark:border-slate-600"
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="text-white"
+                      style={{ backgroundColor: "#0052CC" }}
+                    >
+                      {isSubmitting ? "Guardando..." : "Guardar Cambios"}
+                    </Button>
+                  </DialogFooter>
+                </Form>
+              )}
+            </Formik>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

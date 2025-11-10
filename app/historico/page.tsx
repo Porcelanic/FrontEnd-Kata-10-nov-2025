@@ -18,7 +18,6 @@ import {
 } from "@/components/ui/select";
 import { FiExternalLink, FiRefreshCw } from "react-icons/fi";
 
-// Helper function to normalize tipo_solicitud from backend
 const normalizeTipoSolicitud = (tipo: string): "Acceso" | "Despliegue" => {
   const normalized = tipo.toLowerCase().trim();
   return normalized === "acceso" || normalized === "Acceso"
@@ -52,7 +51,6 @@ export default function HistoricoPage() {
     try {
       const data = await SolicitudService.getAllResolvedSolicitudes();
 
-      // Transform backend data to match frontend Solicitud type
       const transformedSolicitudes: Solicitud[] = data.map((s: any) => ({
         id: s.id_solicitud || "",
         titulo: s.titulo || "",
@@ -62,7 +60,7 @@ export default function HistoricoPage() {
         solicitante_id: s.correo_solicitante || "",
         solicitante_nombre: s.correo_solicitante || "Desconocido",
         aprobador_id: null,
-        aprobador_nombre: undefined, // Backend doesn't store aprobador info yet
+        aprobador_nombre: undefined,
         estado: s.estado || "pendiente",
         comentario_aprobador: s.comentario_adicional || null,
         fecha_creacion: new Date(s.fecha_solicitud || Date.now()),
@@ -70,12 +68,10 @@ export default function HistoricoPage() {
           ? new Date(s.fecha_solicitud)
           : null,
         centro_costos: s.centro_costo || 0,
-        // Map SolicitudDespliegue fields
         link_pull_request: s.solicitudDespliegue?.link_pull_request,
         documentacion_despliegue:
           s.solicitudDespliegue?.documentacion_despliegue,
         link_tablero_jira: s.solicitudDespliegue?.historia_jira,
-        // Map SolicitudAcceso fields
         aplicacion: s.solicitudAcceso?.aplicacion,
         rol_en_aplicacion: s.solicitudAcceso?.rol_en_aplicacion,
       }));
