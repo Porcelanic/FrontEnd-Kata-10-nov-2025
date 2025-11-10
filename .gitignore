@@ -87,6 +87,16 @@ web_modules/
 .next
 out
 
+# Terraform files
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/*.tfplan
+terraform/tfplan
+terraform/*.tfvars
+terraform/crash.log
+
 # Nuxt.js build / generate output
 .nuxt
 dist
@@ -134,3 +144,6 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+
+.DS_Store

@@ -33,7 +33,6 @@ const validationSchema = Yup.object().shape({
     .oneOf(["Despliegue", "Acceso"], "Tipo de solicitud inválido")
     .required("El tipo de solicitud es requerido"),
   descripcion: Yup.string().required("La descripción es requerida"),
-  comentario_adicional: Yup.string(),
   link_pull_request: Yup.string().when("tipo_solicitud", {
     is: "Despliegue",
     then: (schema) =>
@@ -99,7 +98,6 @@ export default function SolicitudPage() {
         titulo: values.titulo,
         tipo_solicitud: values.tipo_solicitud as SolicitudTipo,
         descripcion: values.descripcion,
-        comentario_adicional: values.comentario_adicional || undefined,
         correo_solicitante: user.correo,
         centro_costo: user.centro_costos,
         // Add type-specific fields
@@ -163,7 +161,6 @@ export default function SolicitudPage() {
                   titulo: "",
                   tipo_solicitud: "" as SolicitudTipo | "",
                   descripcion: "",
-                  comentario_adicional: "",
                   link_pull_request: "",
                   documentacion_despliegue: "",
                   link_tablero_jira: "",
@@ -262,23 +259,6 @@ export default function SolicitudPage() {
                         name="descripcion"
                         component="div"
                         className="text-sm text-red-600 dark:text-red-400"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label
-                        htmlFor="comentario_adicional"
-                        className="dark:text-slate-200"
-                      >
-                        Comentario Adicional (opcional)
-                      </Label>
-                      <Field
-                        as={Textarea}
-                        id="comentario_adicional"
-                        name="comentario_adicional"
-                        placeholder="Agregue comentarios adicionales si lo desea"
-                        rows={3}
-                        className="dark:bg-slate-700 dark:text-slate-100 dark:placeholder:text-slate-500 dark:border-slate-600"
                       />
                     </div>
 
